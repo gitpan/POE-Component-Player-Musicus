@@ -1,5 +1,8 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.12  Tue May 18 2004
+	- Now correctly handles plugins that return no song information
+
 1.11  Wed May 5 2004
 	- Fixed quoting when passing data to Musicus
 	- Clarified docs on done/died events

@@ -8,7 +8,7 @@ use POE::Component::Child;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.11';
+our $VERSION = '1.12';
 
 sub new {
 	my $class = shift;
@@ -108,8 +108,12 @@ sub new {
 					comment	=> $tags{c},
 				);
 			} else {
-				# We capture the space because it's part of the record seperator if we do get a title string.  If we don't then there's a space tacked on to the beginning of the title, so it must be removed.
-				$title =~ s/^ //;
+				if($songinfo eq '0 @') { # No song info returned by plugin, this string is hard coded into Musicus for this case
+					$title = '';
+				} else {
+					# We capture the space because it's part of the record seperator if we do get a title string.  If we don't then there's a space tacked on to the beginning of the title, so it must be removed.
+					$title =~ s/^ //;
+				}
 
 				# Go ahead and fill out the hash
 				%info = (
