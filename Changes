@@ -1,5 +1,9 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.11  Wed May 5 2004
+	- Fixed quoting when passing data to Musicus
+	- Clarified docs on done/died events
+
 1.10  Sun Apr 25 2004 
 	- Added "ready" event
 	- Changes made to reflect how new version of musicus communicates

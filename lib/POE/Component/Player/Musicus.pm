@@ -8,7 +8,7 @@ use POE::Component::Child;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.10';
+our $VERSION = '1.11';
 
 sub new {
 	my $class = shift;
@@ -152,12 +152,15 @@ sub start {
 
 sub play {
 	my ($self, $file) = @_;
+	$file =~ s/"/\\"/g; # Escape quotes for Musicus
 	$self->write("play \"$file\"");
 }
 sub getinfo {
 	my ($self, $file) = @_;
+	$file =~ s/"/\\"/g; # Escape quotes for Musicus
 	$self->write("getinfo \"$file\"");
 }
+
 sub setvol {
 	my ($self, $left, $right) = @_;
 	$self->write("setvol $left $right");
@@ -299,7 +302,7 @@ Fired when the player has successfully started.  You do not need to wait for thi
 
 =head2 done / died
 
-Fired upon termination or abnormal ending of the player.
+Fired upon termination or abnormal ending of the player.  This event is inherited from L<POE::Component::Child>, see those docs for more details.
 
 =head2 error
 
