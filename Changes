@@ -1,0 +1,9 @@
+Revision history for Perl extension POE::Component::Player::Musicus.
+
+1.00  Sat Apr 3 2004
+	- First public release
+
+0.01  Wed Jan 21 05:51:12 2004
+	- original version; created by h2xs 1.23 with options
+		-AX -n POE::Component::Player::Musicus
+
