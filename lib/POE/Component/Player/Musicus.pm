@@ -8,7 +8,7 @@ use POE::Component::Child;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.12';
+our $VERSION = '1.20';
 
 sub new {
 	my $class = shift;
@@ -19,6 +19,7 @@ sub new {
 		output	=> 'libOSS.so',
 		musicus	=> 'musicus',
 		alias	=> 'main',
+		delay	=> 0,
 
 		# Events
 		error		=> 'error',
@@ -42,23 +43,23 @@ sub new {
 		@_,
 	);
 
+	if($params{delay} > 0) {
+		eval { require Time::HiRes; };
+		die "Error while loading Time::HiRes, which is required if a delay is specified: $@" if $@;
+	}
+
 	my @events = ();
 	if($params{done}) { push @events, 'done', $params{done}; }
 	if($params{died}) { push @events, 'died', $params{died}; }
-
-	my $writemap;
-	foreach (qw( quit version getvol stop pause unpause getpos getlength getinfocurr )) {
-		$writemap->{$_} = $_;
-	}
 
 	# Define the stdout sub here so it doesn't look like a method that can be used by other modules
 	my $stdout = sub {
 		my ($self, $args) = @_;
 		local $_ = $args->{out};
 
-		if($self->{debug}) {
-			print STDERR "PoCo::Player::Musicus got input: [$_]\n";
-		}
+		print STDERR "PoCo::Player::Musicus got input: [$_]\n" if $self->{debug};
+
+		my $unknown = 0;
 
 		if (/^\@ OK getpos (.+?)\s*$/) {
 			POE::Kernel->post($self->{alias}, $self->{getpos}, $1);
@@ -132,16 +133,27 @@ sub new {
 			POE::Kernel->post($self->{alias}, $self->{$command}, \%info);
 		} elsif (/^\@ ERROR (.*?)\s*"(.*?)"\s*$/) {
 			POE::Kernel->post($self->{alias}, $self->{error}, $self, { err => -1, error => $2, syscall => $1 });
+		} else {
+			$unknown = 1;
+			if($self->{debug}) {
+				print STDERR "Received unknown input: $_\n";
+			}
 		}
+
+		$self->queue_response unless $unknown;
 	};
 
 	my $self = $class->SUPER::new(
 		events		=> { stdout => $stdout, @events },
-		writemap	=> $writemap,
 		debug		=> $params{debug},
 	);
 
-	%$self = (%$self, %params); # Add my paramaters to the hash that gets passed around
+	%$self = (
+		%$self,
+		%params,
+		outstanding_request	=> 0,
+		queue			=> [],
+	); # Add my stuff to the hash that gets passed around
 
 	$self->start();
 
@@ -157,28 +169,98 @@ sub start {
 sub play {
 	my ($self, $file) = @_;
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
-	$self->write("play \"$file\"");
+	$self->queue_write("play \"$file\"");
 }
 sub getinfo {
 	my ($self, $file) = @_;
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
-	$self->write("getinfo \"$file\"");
+	$self->queue_write("getinfo \"$file\"");
 }
 
 sub setvol {
 	my ($self, $left, $right) = @_;
-	$self->write("setvol $left $right");
+	$self->queue_write("setvol $left $right");
 }
 
 sub setpos {
 	my ($self, $pos) = @_;
-	$self->write("setpos $pos");
+	$self->queue_write("setpos $pos");
 }
 
 sub xcmd {
 	my ($self, $cmd) = @_;
 	return -1 unless $cmd;
-	$self->write($cmd);
+	$self->queue_write($cmd);
+}
+
+sub quit {
+	my $self = shift;
+	$self->queue_write('quit');
+}
+
+sub version {
+	my $self = shift;
+	$self->queue_write('version');
+}
+
+sub getvol {
+	my $self = shift;
+	$self->queue_write('getvol');
+}
+
+sub stop {
+	my $self = shift;
+	$self->queue_write('stop');
+}
+
+sub pause {
+	my $self = shift;
+	$self->queue_write('pause');
+}
+
+sub unpause {
+	my $self = shift;
+	$self->queue_write('unpause');
+}
+
+sub getpos {
+	my $self = shift;
+	$self->queue_write('getpos');
+}
+
+sub getlength {
+	my $self = shift;
+	$self->queue_write('getlength');
+}
+
+sub getinfocurr {
+	my $self = shift;
+	$self->queue_write('getinfocurr');
+}
+
+# Musicus only allows one request to be processed at a time.  There is the possibility of multiple requests being sent before a response is generated if they are sent fast enough.  The workaround I use is to create a que and a flag that shows an outstanding request.  Every time a command is sent, the flag is set to positive and no more commands will be sent until a result is obtained, which sets the flag to 0.
+
+sub queue_write {
+	my ($self, $cmd) = @_;
+	print STDERR "Queued command [$cmd]\n" if $self->{debug};
+	push @{$self->{queue}}, $cmd;
+	$self->queue_check;
+}
+
+sub queue_check {
+	my $self = shift;
+	if(!$self->{outstanding_request} && @{$self->{queue}}) {
+		print STDERR "Unqueued command [$self->{queue}[0]]\n" if $self->{debug};
+		if($self->{delay} > 0) { Time::HiRes::usleep($self->{delay}); } # Hopefully prevent plugin confusion by waiting a little
+		$self->write(shift @{$self->{queue}});
+		$self->{outstanding_request} = 1;
+	}
+}
+
+sub queue_response {
+	my $self = shift;
+	$self->{outstanding_request} = 0;
+	$self->queue_check;
 }
 
 1;
@@ -212,6 +294,8 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<Text::Balanced>
 
+=item * L<Time::HiRes> (Optional, see L<delay>)
+
 =item * B<musicus> (1.11 or later) - L<http://muth.org/Robert/Musicus/>
 
 =back
@@ -241,6 +325,10 @@ Output plugin.  Default: F<libOSS.so>.
 =item musicus
 
 Location of musicus executable.  Default: F<musicus>.
+
+=item delay
+
+Some plugins can get confused if you send multiple getpos and setpos commands in quick succession (libmpg123 is the only one I've found so far) and musicus will lock up.  This option will set a delay of any number of microseconds after sending every command.  It defaults to no delay.  If you use this, L<Time::HiRes> is required.  In my personal experience, 100000 has been a safe number, but this is likely to change from machine to machine.
 
 =item <event-name>
 

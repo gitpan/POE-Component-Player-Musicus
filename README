@@ -1,4 +1,4 @@
-POE-Component-Player-Musicus version 1.12
+POE-Component-Player-Musicus version 1.20
 =========================================
 
 This POE component is used to manipulate the musicus audio player
@@ -20,6 +20,7 @@ This module requires these other modules and libraries:
   * POE
   * POE::Component::Child
   * Text::Balanced
+  * Time::HiRes (Optional)
   * musicus (1.11 or greater) - http://muth.org/Robert/Musicus/
 
 COPYRIGHT AND LICENCE
