@@ -19,7 +19,8 @@ This module requires these other modules and libraries:
 
   * POE
   * POE::Component::Child
-  * musicus (1.6 or greater) - http://muth.org/Robert/Musicus/
+  * Text::Balanced
+  * musicus (1.11 or greater) - http://muth.org/Robert/Musicus/
 
 COPYRIGHT AND LICENCE
 

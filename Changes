@@ -1,5 +1,11 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.10  Sun Apr 25 2004 
+	- Added "ready" event
+	- Changes made to reflect how new version of musicus communicates
+	- Completely reworked getinfo/getinfocurr mechanism to reflect musicus
+	  changes
+
 1.00  Sat Apr 3 2004
 	- First public release
 

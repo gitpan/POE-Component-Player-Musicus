@@ -5,9 +5,10 @@ use strict;
 
 use POE;
 use POE::Component::Child;
+use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.00';
+our $VERSION = '1.10';
 
 sub new {
 	my $class = shift;
@@ -37,6 +38,7 @@ sub new {
 		getlength	=> 'getlength',
 		getinfocurr	=> 'getinfocurr',
 		getinfo		=> 'getinfo',
+		ready		=> 'ready',
 		@_,
 	);
 
@@ -49,8 +51,88 @@ sub new {
 		$writemap->{$_} = $_;
 	}
 
+	# Define the stdout sub here so it doesn't look like a method that can be used by other modules
+	my $stdout = sub {
+		my ($self, $args) = @_;
+		local $_ = $args->{out};
+
+		if($self->{debug}) {
+			print STDERR "PoCo::Player::Musicus got input: [$_]\n";
+		}
+
+		if (/^\@ OK getpos (.+?)\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{getpos}, $1);
+		} elsif (/^\@ OK quit\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{quit});
+		} elsif (/^\@ OK version (.+?)\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{version}, $1);
+		} elsif (/^\@ OK setvol\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{setvol});
+		} elsif (/^\@ OK getvol (.+?) (.+?)\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{getvol}, $1, $2);
+		} elsif (/^\@ OK play "(.+?)"\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{play}, $1);
+		} elsif (/^\@ OK stop\s*$/ ) {
+			POE::Kernel->post($self->{alias}, $self->{stop});
+		} elsif (/^\@ OK pause\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{pause});
+		} elsif (/^\@ OK unpause\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{unpause});
+		} elsif (/^\@ OK setpos (.+?)\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{setpos}, $1);
+		} elsif (/^\@ OK getlength (.+?)\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{getlength}, $1);
+		} elsif (/^# Entering interactive mode\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{ready});
+		} elsif (my ($command, $songinfo) = /^\@ OK (getinfocurr|getinfo) (.*)/) {
+			my ($file, $songinfo) = (extract_quotelike($songinfo))[5,1];
+			$file =~ s#\\"#"#g; # Musicus only escapes double quotes
+			($songinfo) = (extract_quotelike($songinfo))[5];
+			$songinfo =~ s#\\"#"#g; #  Musicus only escapes double quotes
+			my ($length, $title) = $songinfo =~ /^(\d+)( .*)$/;
+			my %info = (
+				file	=> $file,
+				length	=> $length,
+			);
+			
+			if(my %tags = $title =~ / \x1e(\w)=([^\x1e]*?)(?= \x1e|\t)/g) {
+				%info = (
+					%info,
+					artist	=> $tags{p},
+					title	=> $tags{t},
+					album	=> $tags{a},
+					track	=> $tags{n},
+					year	=> $tags{y},
+					date	=> $tags{d},
+					genre	=> $tags{g},
+					comment	=> $tags{c},
+				);
+			} else {
+				# We capture the space because it's part of the record seperator if we do get a title string.  If we don't then there's a space tacked on to the beginning of the title, so it must be removed.
+				$title =~ s/^ //;
+
+				# Go ahead and fill out the hash
+				%info = (
+					%info,
+					artist	=> '',
+					title	=> $title,
+					album	=> '',
+					track	=> '',
+					year	=> '',
+					date	=> '',
+					genre	=> '',
+					comment	=> '',
+				);
+			}
+
+			POE::Kernel->post($self->{alias}, $self->{$command}, \%info);
+		} elsif (/^\@ ERROR (.*?)\s*"(.*?)"\s*$/) {
+			POE::Kernel->post($self->{alias}, $self->{error}, $self, { err => -1, error => $2, syscall => $1 });
+		}
+	};
+
 	my $self = $class->SUPER::new(
-		events		=> { stdout => \&stdout, @events },
+		events		=> { stdout => $stdout, @events },
 		writemap	=> $writemap,
 		debug		=> $params{debug},
 	);
@@ -70,11 +152,11 @@ sub start {
 
 sub play {
 	my ($self, $file) = @_;
-	$self->write("play $file");
+	$self->write("play \"$file\"");
 }
 sub getinfo {
 	my ($self, $file) = @_;
-	$self->write("getinfo $file");
+	$self->write("getinfo \"$file\"");
 }
 sub setvol {
 	my ($self, $left, $right) = @_;
@@ -90,65 +172,6 @@ sub xcmd {
 	my ($self, $cmd) = @_;
 	return -1 unless $cmd;
 	$self->write($cmd);
-}
-
-sub stdout {
-	my ($self, $args) = @_;
-	local $_ = $args->{out};
-
-	if($self->{debug}) {
-		print STDERR "PoCo::Player::Musicus got input: [$_]\n";
-	}
-
-	if (/^\@ OK getpos (.+?)\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{getpos}, $1);
-	} elsif (/^\@ OK quit ""\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{quit});
-	} elsif (/^\@ OK version (.+?)\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{version}, $1);
-	} elsif (/^\@ OK setvol ""\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{setvol});
-	} elsif (/^\@ OK getvol (.+?) (.+?)\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{getvol}, $1, $2);
-	} elsif (/^\@ OK play "(.+?)"\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{play}, $1);
-	} elsif (/^\@ OK stop ""\s*$/ ) {
-		POE::Kernel->post($self->{alias}, $self->{stop});
-	} elsif (/^\@ OK pause ""\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{pause});
-	} elsif (/^\@ OK unpause ""\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{unpause});
-	} elsif (/^\@ OK setpos (.+?)\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{setpos}, $1);
-	} elsif (/^\@ OK getlength (.+?)\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{getlength}, $1);
-	} elsif (/^\@ OK (getinfocurr|getinfo) "(\d+) p: ([^\t]*)\tt: ([^\t]*)\ta: ([^\t]*)\tn: ([^\t]*)\ty: ([^\t]*)\td: ([^\t]*)\tg: ([^\t]*)\tc: ([^\t]*)\t"\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{$1}, {
-			length	=> $2,
-			artist	=> $3,
-			title	=> $4,
-			album	=> $5,
-			track	=> $6,
-			year	=> $7,
-			date	=> $8,
-			genre	=> $9,
-			comment	=> $10,
-		});
-	} elsif (/^\@ OK (getinfocurr|getinfo) "(\d+) (.*?)"\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{$1}, {
-			length	=> $2,
-			artist	=> '',
-			title	=> $3,
-			album	=> '',
-			track	=> '',
-			year	=> '',
-			date	=> '',
-			genre	=> '',
-			comment	=> '',
-		});
-	} elsif (/^\@ ERROR (.*?)\s*"(.*?)"\s*$/) {
-		POE::Kernel->post($self->{alias}, $self->{error}, $self, { err => -1, error => $2, syscall => $1 });
-	}
 }
 
 1;
@@ -180,7 +203,9 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<POE::Component::Child>
 
-=item * B<musicus> (1.6 or later) - L<http://muth.org/Robert/Musicus/>
+=item * L<Text::Balanced>
+
+=item * B<musicus> (1.11 or later) - L<http://muth.org/Robert/Musicus/>
 
 =back
 
@@ -236,9 +261,9 @@ Tells Musicus to send back the current position.  Will cause a L</getpos> event 
 
 Tells Musicus to send back the current song information.  Will cause a L</getinfocurr> event to fire.
 
-=head2 getinfo <file> I<(Broken)>
+=head2 getinfo <file>
 
-Tells Musicus to send back information about the file specified.  Will cause a L</getinfo> event to fire.  Broken in the current version of musicus.  When it is fixed, I'll probably change what is returned in some way so that it is possible to tell what file the information was retrieved from.)
+Tells Musicus to send back information about the file specified.  Will cause a L</getinfo> event to fire.
 
 =head2 getlength
 
@@ -267,6 +292,10 @@ This method allows for the sending of arbitrary commands to the player in the un
 =head1 EVENTS
 
 Events are fired at the session as configured in the L<new|/"new %hash"> method by I<alias>.  The names of the event handlers may be changed from their defaults by using they name of the event listed below as they key and the name of the event you want it to be called as the value in the L<new|/"new %hash">.
+
+=head2 ready
+
+Fired when the player has successfully started.  You do not need to wait for this event to start sending commands.
 
 =head2 done / died
 
@@ -302,11 +331,11 @@ Fired after a successful L</getpos> call, first argument is the position in the 
 
 =head2 getinfocurr
 
-Fired after a successful L</getinfocurr> call, first argument is a hashref with the following keys: I<length>, I<artist>, I<title>, I<album>, I<track>, I<year>, I<date>, I<genre>, and I<comment>.
+Fired after a successful L</getinfocurr> call, first argument is a hashref with the following keys: I<file>, I<length>, I<artist>, I<title>, I<album>, I<track>, I<year>, I<date>, I<genre>, and I<comment>.  The I<file> value is the same as the argument that was supplied to L</play>.
 
 =head2 getinfo
 
-Fired after a successful L</getinfo> call.  The format is currently the same as L</getinfocurr>.
+Fired after a successful L</getinfo> call.  The format is the same as L</getinfocurr>.  The I<file> value is the same as the argument supplied to the L</getinfo> method.
 
 =head2 setpos
 
@@ -324,15 +353,17 @@ Curtis "Mr_Person" Hawthorne <mrperson@cpan.org>
 
 =over
 
-=item * The L</getinfo> function is broken in this version
-
 =item * If the XMMS MAD plugin is used, Musicus may mysteriously die on a L</getinfocurr> command.  I have no idea why this happens and help would be appreciated.
 
 =back
 
 =head1 ACKNOWLEDGEMENTS
 
-This component is based on L<POE::Component::Player::MPG123> by Erick Calder, which is distributed under the MIT License.  Development would not have been possible without the generous help of Robert Muth, creator of Musicus.
+This component is based on L<POE::Component::Player::Mpg123> by Erick Calder, which is distributed under the MIT License.
+
+Development would not have been possible without the generous help of Robert Muth, creator of Musicus (L<http://www.muth.org/Robert/>).
+
+Some ideas for the getinfo/getinfocurr processing were taken from a patch submitted by Mike Schilli (L<http://www.perlmeister.com>).
 
 =head1 LICENSE AND COPYRIGHT
 

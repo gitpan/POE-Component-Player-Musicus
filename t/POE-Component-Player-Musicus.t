@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use Test::More tests => 27;
+use Test::More tests => 29;
 
 use POE;
 use warnings;
@@ -30,7 +30,11 @@ my $session = POE::Session->create(
 			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus);
 			isa_ok($heap->{musicus}, 'POE::Component::Player::Musicus', 'Musicus Object');
 			$heap->{secondtime} = 0;
-			$heap->{musicus}->play('t/test.mp3');
+		},
+		ready	=> sub {
+			my $heap = $_[ HEAP ];
+			pass('Got ready event');
+			$heap->{musicus}->getinfo('t/test.mp3');
 		},
 		play	=> sub {
 			my $heap = $_[ HEAP ];
@@ -84,6 +88,23 @@ my $session = POE::Session->create(
 			cmp_ok($length, '>', 0, "Got length $length");
 			$heap->{musicus}->getinfocurr;
 		},
+		getinfo		=> sub {
+			my ($heap, $info) = @_[ HEAP, ARG0 ];
+			is_deeply($info, {
+				length	=> 61271,
+				artist	=> 'Curtis "Mr_Person" Hawthorne',
+				title	=> 'POE::Component::Player::Musicus Test MP3',
+				album	=> '',
+				track	=> '',
+				genre	=> 'Ambient',
+				year	=> '2004',
+				date	=> '',
+				comment	=> '',
+				file	=> 't/test.mp3',
+			}, 'Retrieved song info');
+		
+			$heap->{musicus}->play('t/test.mp3');
+		},
 		getinfocurr	=> sub {
 			my ($heap, $info) = @_[ HEAP, ARG0 ];
 			if($heap->{secondtime}) {
@@ -93,10 +114,11 @@ my $session = POE::Session->create(
 					title	=> 'test-notags',
 					album	=> '',
 					track	=> '',
-					date	=> '',
 					genre	=> '',
-					comment	=> '',
 					year	=> '',
+					date	=> '',
+					comment	=> '',
+					file	=> 't/test-notags.mp3',
 				}, 'Retrieved song info');
 			} else {
 				is_deeply($info, {
@@ -104,11 +126,12 @@ my $session = POE::Session->create(
 					artist	=> 'Curtis "Mr_Person" Hawthorne',
 					title	=> 'POE::Component::Player::Musicus Test MP3',
 					album	=> '',
-					track	=> '', 
-					date	=> '', 
+					track	=> '',
 					genre	=> 'Ambient',
-					comment	=> '',
 					year	=> '2004',
+					date	=> '',
+					comment	=> '',
+					file	=> 't/test.mp3',
 				}, 'Retrieved song info');
 			}
 			$heap->{musicus}->stop;
