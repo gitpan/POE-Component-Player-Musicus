@@ -8,7 +8,7 @@ use POE::Component::Child;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.20';
+our $VERSION = '1.21';
 
 sub new {
 	my $class = shift;
@@ -163,6 +163,7 @@ sub new {
 sub start {
 	my $self = shift;
 	
+	$self->{queue} = []; # Set it here again in case we're restarting
 	$self->run($self->{musicus}, '-path', $self->{path}, '-output', $self->{output});
 }
 
@@ -294,7 +295,7 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<Text::Balanced>
 
-=item * L<Time::HiRes> (Optional, see L<delay>)
+=item * L<Time::HiRes> (Optional, see delay parameter)
 
 =item * B<musicus> (1.11 or later) - L<http://muth.org/Robert/Musicus/>
 

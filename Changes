@@ -1,5 +1,10 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.21  Sun August 1 2004
+	- Fixed small bug in queuing system where commands that were
+	  queued before a restart would be sent after the restart
+	- Small POD fix
+
 1.20  Sat May 29 2004
 	- Implemented queuing system to prevent multiple commands being
 	  sent to musicus without a response back
