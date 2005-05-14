@@ -1,5 +1,8 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.30  May 14 2005
+	- Switched to a non-blocking POE based method of doing delays
+
 1.21  Sun August 1 2004
 	- Fixed small bug in queuing system where commands that were
 	  queued before a restart would be sent after the restart

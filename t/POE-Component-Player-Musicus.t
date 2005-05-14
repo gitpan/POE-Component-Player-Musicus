@@ -27,7 +27,7 @@ my $session = POE::Session->create(
 			ok($kernel, 'POE Kernel started');
 			$kernel->alias_set('main');
 			$kernel->delay('timeout', 60);
-			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus);
+			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus, delay => 500);
 			isa_ok($heap->{musicus}, 'POE::Component::Player::Musicus', 'Musicus Object');
 			$heap->{secondtime} = 0;
 		},
@@ -48,7 +48,7 @@ my $session = POE::Session->create(
 		},
 		version	=> sub {
 			my ($heap, $version) = @_[ HEAP, ARG0 ];
-			ok($version, "Got Musicus version $version");
+			ok($version, "Got Musicus version $version 100 times");
 			$heap->{musicus}->getvol;
 		},
 		getvol	=> sub {
@@ -173,6 +173,7 @@ my $session = POE::Session->create(
 			$heap->{musicus}->quit;
 		},
 	},
+	#options => { trace => 1, debug => 1 },
 );
 
 ok($session, 'Created POE Session');

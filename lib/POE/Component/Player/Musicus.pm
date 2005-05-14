@@ -8,7 +8,15 @@ use POE::Component::Child;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.21';
+our $VERSION = '1.30';
+
+# POE does this for its stuff and gets higher resolution if you have Time::HiRes and regular resolution if you don't.  time needs to be used within this package, so I did the same here so it could be locally imported
+BEGIN {
+	eval {
+		require Time::HiRes;
+		Time::HiRes->import('time');
+	}
+}
 
 sub new {
 	my $class = shift;
@@ -42,11 +50,6 @@ sub new {
 		ready		=> 'ready',
 		@_,
 	);
-
-	if($params{delay} > 0) {
-		eval { require Time::HiRes; };
-		die "Error while loading Time::HiRes, which is required if a delay is specified: $@" if $@;
-	}
 
 	my @events = ();
 	if($params{done}) { push @events, 'done', $params{done}; }
@@ -139,7 +142,6 @@ sub new {
 				print STDERR "Received unknown input: $_\n";
 			}
 		}
-
 		$self->queue_response unless $unknown;
 	};
 
@@ -147,13 +149,16 @@ sub new {
 		events		=> { stdout => $stdout, @events },
 		debug		=> $params{debug},
 	);
-
+	
 	%$self = (
 		%$self,
 		%params,
 		outstanding_request	=> 0,
+		last_request_time	=> 0,
 		queue			=> [],
 	); # Add my stuff to the hash that gets passed around
+
+	$poe_kernel->state('queue_check' => $self); # Add an object handler for the queue_check event so we can set alarms for it later
 
 	$self->start();
 
@@ -172,6 +177,7 @@ sub play {
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
 	$self->queue_write("play \"$file\"");
 }
+
 sub getinfo {
 	my ($self, $file) = @_;
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
@@ -239,7 +245,7 @@ sub getinfocurr {
 	$self->queue_write('getinfocurr');
 }
 
-# Musicus only allows one request to be processed at a time.  There is the possibility of multiple requests being sent before a response is generated if they are sent fast enough.  The workaround I use is to create a que and a flag that shows an outstanding request.  Every time a command is sent, the flag is set to positive and no more commands will be sent until a result is obtained, which sets the flag to 0.
+# Musicus only allows one request to be processed at a time.  There is the possibility of multiple requests being sent before a response is generated if they are sent fast enough.  The workaround I use is to create a queue and a flag that shows an outstanding request.  Every time a command is sent, the flag is set to positive and no more commands will be sent until a result is obtained, which sets the flag to 0.
 
 sub queue_write {
 	my ($self, $cmd) = @_;
@@ -250,11 +256,18 @@ sub queue_write {
 
 sub queue_check {
 	my $self = shift;
+
 	if(!$self->{outstanding_request} && @{$self->{queue}}) {
-		print STDERR "Unqueued command [$self->{queue}[0]]\n" if $self->{debug};
-		if($self->{delay} > 0) { Time::HiRes::usleep($self->{delay}); } # Hopefully prevent plugin confusion by waiting a little
-		$self->write(shift @{$self->{queue}});
-		$self->{outstanding_request} = 1;
+		# The delay parameter is defined in microseconds, but all the POE time stuff takes seconds, so we convert
+		my $delay_seconds = $self->{delay} / 1000000;
+		if($self->{last_request_time} > 0 && (time - $self->{last_request_time}) < $delay_seconds) {
+			$poe_kernel->alarm('queue_check', $self->{last_request_time} + $delay_seconds);
+		} else {
+			print STDERR "Unqueued command [$self->{queue}[0]]\n" if $self->{debug};
+			$self->write(shift @{$self->{queue}});
+			$self->{outstanding_request} = 1;
+			$self->{last_request_time} = time;
+		}
 	}
 }
 
@@ -295,9 +308,7 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<Text::Balanced>
 
-=item * L<Time::HiRes> (Optional, see delay parameter)
-
-=item * B<musicus> (1.11 or later) - L<http://muth.org/Robert/Musicus/>
+=item * B<musicus> (1.11 or later required) - L<http://muth.org/Robert/Musicus/>
 
 =back
 
@@ -329,7 +340,7 @@ Location of musicus executable.  Default: F<musicus>.
 
 =item delay
 
-Some plugins can get confused if you send multiple getpos and setpos commands in quick succession (libmpg123 is the only one I've found so far) and musicus will lock up.  This option will set a delay of any number of microseconds after sending every command.  It defaults to no delay.  If you use this, L<Time::HiRes> is required.  In my personal experience, 100000 has been a safe number, but this is likely to change from machine to machine.
+Some plugins can get confused if you send multiple getpos and setpos commands in quick succession (libmpg123 is the only one I've found so far) and musicus will lock up.  This option will ensure a minumum delay of any number of microseconds between commands.  It defaults to no delay.  This uses POE's timed event interface, which means you will have higher precision in your delays if you have L<Time::HiRes installed>, but it will work without it.  In my personal experience, 100000 has been a safe number for a delay, but this is likely to change from machine to machine.
 
 =item <event-name>
 
@@ -463,5 +474,5 @@ Some ideas for the getinfo/getinfocurr processing were taken from a patch submit
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2004 Curtis "Mr_Person" Hawthorne. This product is distributed under the MIT License. A copy of this license was included in a file called LICENSE. If for some reason, this file was not included, please see L<http://www.opensource.org/licenses/mit-license.html> to obtain a copy of this license.
+Copyright (c) 2004-2005 Curtis "Mr_Person" Hawthorne. This product is distributed under the MIT License. A copy of this license was included in a file called LICENSE. If for some reason, this file was not included, please see L<http://www.opensource.org/licenses/mit-license.html> to obtain a copy of this license.
 
