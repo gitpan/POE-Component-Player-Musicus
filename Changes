@@ -1,5 +1,9 @@
 Revision history for Perl extension POE::Component::Player::Musicus.
 
+1.31  Jan 1 2006
+	- Fixed broken queue system using the new object based PoCo-Child
+	- Significantly improved test suite
+
 1.30  May 14 2005
 	- Switched to a non-blocking POE based method of doing delays
 

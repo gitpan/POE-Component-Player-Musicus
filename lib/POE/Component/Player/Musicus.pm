@@ -4,11 +4,11 @@ use warnings;
 use strict;
 
 use POE;
-use POE::Component::Child;
+use POE::Component::Child 1.39;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.30';
+our $VERSION = '1.31';
 
 # POE does this for its stuff and gets higher resolution if you have Time::HiRes and regular resolution if you don't.  time needs to be used within this package, so I did the same here so it could be locally imported
 BEGIN {
@@ -52,8 +52,6 @@ sub new {
 	);
 
 	my @events = ();
-	if($params{done}) { push @events, 'done', $params{done}; }
-	if($params{died}) { push @events, 'died', $params{died}; }
 
 	# Define the stdout sub here so it doesn't look like a method that can be used by other modules
 	my $stdout = sub {
@@ -112,11 +110,10 @@ sub new {
 					comment	=> $tags{c},
 				);
 			} else {
-				if($songinfo eq '0 @') { # No song info returned by plugin, this string is hard coded into Musicus for this case
+				$title =~ s/^ //; # We capture the space because it's part of the record seperator if we do get a title string.  If we don't then there's a space tacked on to the beginning of the title, so it must be removed.
+
+				if($title eq '0 @') { # No song info returned by plugin, this string is hard coded into Musicus for this case
 					$title = '';
-				} else {
-					# We capture the space because it's part of the record seperator if we do get a title string.  If we don't then there's a space tacked on to the beginning of the title, so it must be removed.
-					$title =~ s/^ //;
 				}
 
 				# Go ahead and fill out the hash
@@ -138,11 +135,9 @@ sub new {
 			POE::Kernel->post($self->{alias}, $self->{error}, $self, { err => -1, error => $2, syscall => $1 });
 		} else {
 			$unknown = 1;
-			if($self->{debug}) {
-				print STDERR "Received unknown input: $_\n";
-			}
+			print STDERR "Received unknown input: $_\n" if $self->{debug};
 		}
-		$self->queue_response unless $unknown;
+		$self->_queue_response unless $unknown;
 	};
 
 	my $self = $class->SUPER::new(
@@ -158,110 +153,121 @@ sub new {
 		queue			=> [],
 	); # Add my stuff to the hash that gets passed around
 
-	$poe_kernel->state('queue_check' => $self); # Add an object handler for the queue_check event so we can set alarms for it later
-
-	$self->start();
+	$self->start;
 
 	return $self;
 }
 
 sub start {
 	my $self = shift;
-	
+
 	$self->{queue} = []; # Set it here again in case we're restarting
+	$self->{outstanding_request} = 0;
+	$self->{last_request_time} = 0;
 	$self->run($self->{musicus}, '-path', $self->{path}, '-output', $self->{output});
+}
+
+sub _start {
+	my $self = shift;
+	my @args = @_;
+
+	$poe_kernel->state('_queue_check', $self);
+	$self->{session} = $poe_kernel->get_active_session;
+
+	$self->SUPER::_start(@args);
 }
 
 sub play {
 	my ($self, $file) = @_;
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
-	$self->queue_write("play \"$file\"");
+	$self->_queue_write("play \"$file\"");
 }
 
 sub getinfo {
 	my ($self, $file) = @_;
 	$file =~ s/"/\\"/g; # Escape quotes for Musicus
-	$self->queue_write("getinfo \"$file\"");
+	$self->_queue_write("getinfo \"$file\"");
 }
 
 sub setvol {
 	my ($self, $left, $right) = @_;
-	$self->queue_write("setvol $left $right");
+	$self->_queue_write("setvol $left $right");
 }
 
 sub setpos {
 	my ($self, $pos) = @_;
-	$self->queue_write("setpos $pos");
+	$self->_queue_write("setpos $pos");
 }
 
 sub xcmd {
 	my ($self, $cmd) = @_;
 	return -1 unless $cmd;
-	$self->queue_write($cmd);
+	$self->_queue_write($cmd);
 }
 
 sub quit {
 	my $self = shift;
-	$self->queue_write('quit');
+	$self->_queue_write('quit');
 }
 
 sub version {
 	my $self = shift;
-	$self->queue_write('version');
+	$self->_queue_write('version');
 }
 
 sub getvol {
 	my $self = shift;
-	$self->queue_write('getvol');
+	$self->_queue_write('getvol');
 }
 
 sub stop {
 	my $self = shift;
-	$self->queue_write('stop');
+	$self->_queue_write('stop');
 }
 
 sub pause {
 	my $self = shift;
-	$self->queue_write('pause');
+	$self->_queue_write('pause');
 }
 
 sub unpause {
 	my $self = shift;
-	$self->queue_write('unpause');
+	$self->_queue_write('unpause');
 }
 
 sub getpos {
 	my $self = shift;
-	$self->queue_write('getpos');
+	$self->_queue_write('getpos');
 }
 
 sub getlength {
 	my $self = shift;
-	$self->queue_write('getlength');
+	$self->_queue_write('getlength');
 }
 
 sub getinfocurr {
 	my $self = shift;
-	$self->queue_write('getinfocurr');
+	$self->_queue_write('getinfocurr');
 }
 
 # Musicus only allows one request to be processed at a time.  There is the possibility of multiple requests being sent before a response is generated if they are sent fast enough.  The workaround I use is to create a queue and a flag that shows an outstanding request.  Every time a command is sent, the flag is set to positive and no more commands will be sent until a result is obtained, which sets the flag to 0.
 
-sub queue_write {
+sub _queue_write {
 	my ($self, $cmd) = @_;
 	print STDERR "Queued command [$cmd]\n" if $self->{debug};
 	push @{$self->{queue}}, $cmd;
-	$self->queue_check;
+	$poe_kernel->post($self->{session}, '_queue_check');
 }
 
-sub queue_check {
+sub _queue_check {
 	my $self = shift;
 
 	if(!$self->{outstanding_request} && @{$self->{queue}}) {
 		# The delay parameter is defined in microseconds, but all the POE time stuff takes seconds, so we convert
 		my $delay_seconds = $self->{delay} / 1000000;
 		if($self->{last_request_time} > 0 && (time - $self->{last_request_time}) < $delay_seconds) {
-			$poe_kernel->alarm('queue_check', $self->{last_request_time} + $delay_seconds);
+			print STDERR "Not enough time since last request, need to wait " . (time - $self->{last_request_time}) . " seconds to unqueue\n" if $self->{debug};
+			$poe_kernel->alarm('_queue_check', $self->{last_request_time} + $delay_seconds);
 		} else {
 			print STDERR "Unqueued command [$self->{queue}[0]]\n" if $self->{debug};
 			$self->write(shift @{$self->{queue}});
@@ -271,10 +277,10 @@ sub queue_check {
 	}
 }
 
-sub queue_response {
+sub _queue_response {
 	my $self = shift;
 	$self->{outstanding_request} = 0;
-	$self->queue_check;
+	$poe_kernel->post($self->{session}, '_queue_check');
 }
 
 1;
@@ -304,7 +310,7 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<POE>
 
-=item * L<POE::Component::Child>
+=item * L<POE::Component::Child> (1.36 or later)
 
 =item * L<Text::Balanced>
 
@@ -474,5 +480,5 @@ Some ideas for the getinfo/getinfocurr processing were taken from a patch submit
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2004-2005 Curtis "Mr_Person" Hawthorne. This product is distributed under the MIT License. A copy of this license was included in a file called LICENSE. If for some reason, this file was not included, please see L<http://www.opensource.org/licenses/mit-license.html> to obtain a copy of this license.
+Copyright (c) 2004-2006 Curtis "Mr_Person" Hawthorne. This product is distributed under the MIT License. A copy of this license was included in a file called LICENSE. If for some reason, this file was not included, please see L<http://www.opensource.org/licenses/mit-license.html> to obtain a copy of this license.
 

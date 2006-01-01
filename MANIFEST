@@ -4,6 +4,8 @@ MANIFEST
 README
 LICENSE
 t/POE-Component-Player-Musicus.t
+t/pod.t
+t/pod-coverage.t
 t/test.mp3
 t/test-notags.mp3
 lib/POE/Component/Player/Musicus.pm

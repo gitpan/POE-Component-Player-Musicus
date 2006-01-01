@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use Test::More tests => 29;
+use Test::More tests => 528;
 
 use POE;
 use warnings;
@@ -27,9 +27,10 @@ my $session = POE::Session->create(
 			ok($kernel, 'POE Kernel started');
 			$kernel->alias_set('main');
 			$kernel->delay('timeout', 60);
-			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus, delay => 500);
+			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus, delay => 10000);
 			isa_ok($heap->{musicus}, 'POE::Component::Player::Musicus', 'Musicus Object');
 			$heap->{secondtime} = 0;
+			$heap->{versiontimes} = 0;
 		},
 		ready	=> sub {
 			my $heap = $_[ HEAP ];
@@ -43,13 +44,16 @@ my $session = POE::Session->create(
 			if($heap->{secondtime}) {
 				$heap->{musicus}->getinfocurr;
 			} else {
-				$heap->{musicus}->version;
+				# Stress test
+				for(1..500) { $heap->{musicus}->version; }
 			}
 		},
 		version	=> sub {
 			my ($heap, $version) = @_[ HEAP, ARG0 ];
-			ok($version, "Got Musicus version $version 100 times");
-			$heap->{musicus}->getvol;
+			ok($version, "Got Musicus version $version " . ++$heap->{versiontimes} . " times");
+			if($heap->{versiontimes} >= 500) {
+				$heap->{musicus}->getvol;
+			}
 		},
 		getvol	=> sub {
 			my ($heap, $left, $right) = @_[ HEAP, ARG0, ARG1 ];
@@ -180,4 +184,36 @@ ok($session, 'Created POE Session');
 
 POE::Kernel->run;
 pass('POE Kernel stopped');
+=for test
+$session = POE::Session->create(
+	inline_states	=> {
+		_start	=> sub {
+			my ($kernel, $heap) = @_[ KERNEL, HEAP ];
+			ok($kernel, 'POE Kernel started');
+			$kernel->alias_set('main');
+			$kernel->delay('timeout', 60);
+			$heap->{musicus} = POE::Component::Player::Musicus->new(musicus => $musicus, delay => 500);
+			isa_ok($heap->{musicus}, 'POE::Component::Player::Musicus', 'Musicus Object');
+			$heap->{secondtime} = 0;
+		},
+		ready	=> sub {
+			my $heap = $_[ HEAP ];
+			pass('Got ready event');
+			$heap->{musicus}->quit();
+		},
+		quit	=> sub {
+			pass('Got quit event');
+		},
+		timeout	=> sub {
+			fail("Test timed out");
+			die "Test timed out";
+		},
+	},
+	#options => { trace => 1, debug => 1 },
+);
 
+ok($session, 'Created POE Session');
+
+POE::Kernel->run;
+pass('POE Kernel stopped');
+=cut
