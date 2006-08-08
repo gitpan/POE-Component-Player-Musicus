@@ -1,22 +1,30 @@
 #!/usr/bin/perl
 
-use Test::More tests => 528;
+use Test::More; tests => 528;
 
 use POE;
 use warnings;
 use strict;
 
-BEGIN { use_ok( 'POE::Component::Player::Musicus' ); }
+my $musicus;
 
-my $musicus = '';
-foreach(split(':', $ENV{PATH})) {
-	if(-x $_ . '/musicus') {
-		$musicus = $_ . '/musicus';
-		last;
+BEGIN {
+	foreach(split(':', $ENV{PATH})) {
+		if(-x $_ . '/musicus') {
+			$musicus = $_ . '/musicus';
+			last;
+		}
+	}
+
+	if(!$musicus) {
+		plan skip_all => 'Cannot run tests without musicus installed.';
+	} else {
+		plan tests => 528;
+		ok($musicus, "Found Musicus executable $musicus");
+		use_ok( 'POE::Component::Player::Musicus' );
 	}
 }
 
-ok($musicus, "Found Musicus executable $musicus");
 ok(-r 't/test.mp3', 'Found test MP3');
 ok(-r 't/test-notags.mp3', 'Found test MP3 with no tags');
 

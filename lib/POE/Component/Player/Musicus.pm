@@ -8,7 +8,7 @@ use POE::Component::Child 1.39;
 use Text::Balanced qw(extract_quotelike);
 our @ISA = 'POE::Component::Child';
 
-our $VERSION = '1.31';
+our $VERSION = '1.32';
 
 # POE does this for its stuff and gets higher resolution if you have Time::HiRes and regular resolution if you don't.  time needs to be used within this package, so I did the same here so it could be locally imported
 BEGIN {
@@ -310,7 +310,7 @@ This POE component is used to manipulate the B<musicus> player from within a POE
 
 =item * L<POE>
 
-=item * L<POE::Component::Child> (1.36 or later)
+=item * L<POE::Component::Child> (1.39 or later)
 
 =item * L<Text::Balanced>
 
@@ -346,7 +346,7 @@ Location of musicus executable.  Default: F<musicus>.
 
 =item delay
 
-Some plugins can get confused if you send multiple getpos and setpos commands in quick succession (libmpg123 is the only one I've found so far) and musicus will lock up.  This option will ensure a minumum delay of any number of microseconds between commands.  It defaults to no delay.  This uses POE's timed event interface, which means you will have higher precision in your delays if you have L<Time::HiRes installed>, but it will work without it.  In my personal experience, 100000 has been a safe number for a delay, but this is likely to change from machine to machine.
+Some plugins can get confused if you send multiple getpos and setpos commands in quick succession (libmpg123 is the only one I've found so far) and musicus will lock up.  This option will ensure a minumum delay of any number of microseconds between commands.  It defaults to no delay.  This uses POE's timed event interface, which means you will have higher precision in your delays if you have L<Time::HiRes> installed, but it will work without it.  In my personal experience, 100000 has been a safe number for a delay, but this is likely to change from machine to machine.
 
 =item <event-name>
 
@@ -356,7 +356,7 @@ Any event fired by this module can be mapped to a name of choice.  This is usefu
 
 =head2 start
 
-This method starts the player.  While it should not be necessary to ever call this method directly since the C<new()> method calls it automatically, this method allows for restarting the player in such instances as when it dies.
+This method starts the player.  While it should not be necessary to ever call this method directly since the C<new()> method calls it automatically, this method allows for restarting the player.
 
 =head2 play <path>
 
@@ -424,7 +424,7 @@ These events are fired whenever any of the named actions occur.
 
 =head2 quit
 
-These event is fired when the player has received the quit command and is about to exit.
+This event is fired when the player has received the quit command and is about to exit.
 
 =head2 version
 
@@ -436,11 +436,11 @@ Fired after a successful L</setvol> call.
 
 =head2 play
 
-Fired after a song has been loaded, first argument is the input plugin that will be used to play it.  Note that Musicus doesn't check to make sure it can play the file before returning this, it would probably be best to call L</getpos> after you get this event to make sure that the song actually started playing.
+Fired after a song has been loaded, first argument is the input plugin that will be used to play it.  Note that Musicus doesn't check to make sure it can actually play the file before returning this, it would probably be best to call L</getpos> after you get this event to make sure that the song really started playing.
 
 =head2 getpos
 
-Fired after a successful L</getpos> call, first argument is the position in the file.
+Fired after a successful L</getpos> call, first argument is the position in the file.  XMMS plugins are expected to return either the position if the song is still playing, -1 if it has stopped, or -2 if there was an output failure such as not being able to open the output device.
 
 =head2 getinfocurr
 
@@ -466,13 +466,13 @@ Curtis "Mr_Person" Hawthorne <mrperson@cpan.org>
 
 =over
 
-=item * If the XMMS MAD plugin is used, Musicus may mysteriously die on a L</getinfocurr> command.  I have no idea why this happens and help would be appreciated.
+=item * If the XMMS MAD plugin is used, Musicus may mysteriously die on the L</getinfocurr> command.  I have no idea why this happens and help would be appreciated.
 
 =back
 
 =head1 ACKNOWLEDGEMENTS
 
-This component is based on L<POE::Component::Player::Mpg123> by Erick Calder, which is distributed under the MIT License.
+This component was based on L<POE::Component::Player::Mpg123> by Erick Calder, which is distributed under the MIT License.
 
 Development would not have been possible without the generous help of Robert Muth, creator of Musicus (L<http://www.muth.org/Robert/>).
 
